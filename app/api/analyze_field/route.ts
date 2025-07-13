@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
     `;
 
     // Call the Earth Engine REST API directly.
-    const response = await fetch(`https://earthengine.googleapis.com/v1alpha/projects/${GEE_PROJECT_ID}:computeValue`, {
+    const response = await fetch(`https://earthengine.googleapis.com/v1alpha/projects/${GEE_PROJECT_ID}/value:compute`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
