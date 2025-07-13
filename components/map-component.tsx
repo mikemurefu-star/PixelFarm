@@ -209,6 +209,7 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
       }
     }
   }
+}
 
 // Helper function to load a JS file with fallback
 const loadJS = async (urls: string[], description: string, validator?: () => boolean) => {
