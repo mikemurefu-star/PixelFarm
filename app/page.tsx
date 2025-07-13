@@ -122,15 +122,15 @@ export default function AgriAIMapInsights() {
     setIsAnalyzing(true)
 
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000"
-
-      const response = await axios.post<ApiResponse>(
-        `${backendUrl}/analyze_field`,
-        {
-          geometry: selectedField.geometry,
-          properties: selectedField.properties,
+      const response = await axios.post<ApiResponse>(`/api/analyze_field`, {
+        geometry: selectedField.geometry,
+        properties: selectedField.properties,
+      }, {
+        timeout: 45000, // 45 second timeout
+        headers: {
+          "Content-Type": "application/json",
         },
-        {
+      })
           timeout: 45000, // 45 second timeout
           headers: {
             "Content-Type": "application/json",
