@@ -1,10 +1,12 @@
 import type React from "react"
 import type { Metadata } from "next"
 import "./globals.css"
+import { Toaster } from "@/components/ui/toaster"
 
 export const metadata: Metadata = {
   title: "AgriAI Map Insights - AI-Powered Agricultural Field Analysis",
-  description: "Analyze agricultural fields using satellite imagery and AI. Get vegetation health indices, water stress detection, and personalized farming recommendations.",
+  description:
+    "Analyze agricultural fields using satellite imagery and AI. Get vegetation health indices, water stress detection, and personalized farming recommendations.",
   keywords: "agriculture, AI, satellite imagery, NDVI, crop health, precision farming, field analysis",
   authors: [{ name: "AgriAI Team" }],
   creator: "AgriAI Map Insights",
@@ -12,7 +14,8 @@ export const metadata: Metadata = {
   robots: "index, follow",
   openGraph: {
     title: "AgriAI Map Insights - AI-Powered Agricultural Analysis",
-    description: "Transform your farming with AI-powered satellite analysis. Get instant insights on crop health, water stress, and field conditions.",
+    description:
+      "Transform your farming with AI-powered satellite analysis. Get instant insights on crop health, water stress, and field conditions.",
     type: "website",
     locale: "en_US",
     siteName: "AgriAI Map Insights",
@@ -24,7 +27,7 @@ export const metadata: Metadata = {
   },
   viewport: "width=device-width, initial-scale=1, maximum-scale=1",
   themeColor: "#16a34a",
-    generator: 'v0.dev'
+  generator: "Next.js",
 }
 
 export default function RootLayout({
@@ -47,6 +50,7 @@ export default function RootLayout({
       </head>
       <body className="antialiased">
         {children}
+        <Toaster />
       </body>
     </html>
   )

@@ -1,21 +1,9 @@
 "use client"
 
 import { useEffect, useRef, useImperativeHandle, forwardRef, useState } from "react"
-import L from "leaflet"
-import "leaflet/dist/leaflet.css"
-import "leaflet-draw/dist/leaflet.draw.css"
-import "leaflet-draw"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import { Navigation, Loader2, AlertTriangle } from 'lucide-react'
-
-// Fix for default markers in Leaflet
-delete (L.Icon.Default.prototype as any)._getIconUrl
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
-  iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
-  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
-})
+import { Navigation, Loader2, AlertTriangle, Trash2, RotateCcw } from "lucide-react"
 
 interface MapComponentProps {
   onFieldSelected: (field: any) => void
@@ -24,26 +12,218 @@ interface MapComponentProps {
 
 const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, analysisOverlay }, ref) => {
   const mapContainer = useRef<HTMLDivElement>(null)
-  const map = useRef<L.Map | null>(null)
-  const drawnItems = useRef<L.FeatureGroup | null>(null)
-  const drawControl = useRef<L.Control.Draw | null>(null)
-  const overlayLayer = useRef<L.GeoJSON | null>(null)
+  const map = useRef<any>(null)
+  const drawnItems = useRef<any>(null)
+  const drawControl = useRef<any>(null)
+  const overlayLayer = useRef<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [mapError, setMapError] = useState<string | null>(null)
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null)
+  const [scriptsLoaded, setScriptsLoaded] = useState(false)
+  const [hasDrawnItems, setHasDrawnItems] = useState(false)
 
   useImperativeHandle(ref, () => ({
     clearDrawing: () => {
-      if (drawnItems.current) {
-        drawnItems.current.clearLayers()
-        onFieldSelected(null)
-      }
-      if (overlayLayer.current && map.current) {
-        map.current.removeLayer(overlayLayer.current)
-        overlayLayer.current = null
-      }
+      clearSelection()
     },
   }))
+
+  // Clear all drawn items
+  const clearSelection = () => {
+    if (drawnItems.current && window.L) {
+      drawnItems.current.clearLayers()
+      setHasDrawnItems(false)
+      onFieldSelected(null)
+    }
+    if (overlayLayer.current && map.current) {
+      map.current.removeLayer(overlayLayer.current)
+      overlayLayer.current = null
+    }
+  }
+
+  // Refresh/retry map initialization
+  const refreshMap = () => {
+    setMapError(null)
+    setIsLoading(true)
+    setScriptsLoaded(false)
+
+    // Remove existing map
+    if (map.current) {
+      map.current.remove()
+      map.current = null
+    }
+
+    // Clear refs
+    drawnItems.current = null
+    drawControl.current = null
+    overlayLayer.current = null
+
+    // Reset state
+    setHasDrawnItems(false)
+    onFieldSelected(null)
+
+    // Reload scripts with a small delay
+    setTimeout(() => {
+      loadLeafletScripts()
+    }, 500)
+  }
+
+  // Helper function to load a CSS file with fallback
+  const loadCSS = async (urls: string[], description: string) => {
+    for (let i = 0; i < urls.length; i++) {
+      try {
+        await new Promise((resolve, reject) => {
+          const link = document.createElement("link")
+          link.rel = "stylesheet"
+          link.href = urls[i]
+          link.crossOrigin = "anonymous"
+
+          const timeout = setTimeout(() => {
+            reject(new Error(`Timeout loading ${description}`))
+          }, 10000)
+
+          link.onload = () => {
+            clearTimeout(timeout)
+            resolve(void 0)
+          }
+
+          link.onerror = () => {
+            clearTimeout(timeout)
+            reject(new Error(`Failed to load ${description} from ${urls[i]}`))
+          }
+
+          document.head.appendChild(link)
+        })
+        console.log(`Successfully loaded ${description} from ${urls[i]}`)
+        return // Success, exit the loop
+      } catch (error) {
+        console.warn(`Failed to load ${description} from ${urls[i]}:`, error)
+        if (i === urls.length - 1) {
+          throw new Error(`Failed to load ${description} from all sources`)
+        }
+      }
+    }
+  }
+
+  // Helper function to load a JS file with fallback
+  const loadJS = async (urls: string[], description: string, validator?: () => boolean) => {
+    for (let i = 0; i < urls.length; i++) {
+      try {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement("script")
+          script.src = urls[i]
+          script.crossOrigin = "anonymous"
+
+          const timeout = setTimeout(() => {
+            reject(new Error(`Timeout loading ${description}`))
+          }, 15000)
+
+          script.onload = () => {
+            clearTimeout(timeout)
+            // Wait a bit for the script to initialize
+            setTimeout(() => {
+              if (validator && !validator()) {
+                reject(new Error(`${description} failed to initialize properly`))
+              } else {
+                resolve(void 0)
+              }
+            }, 300)
+          }
+
+          script.onerror = () => {
+            clearTimeout(timeout)
+            reject(new Error(`Failed to load ${description} from ${urls[i]}`))
+          }
+
+          document.head.appendChild(script)
+        })
+        console.log(`Successfully loaded ${description} from ${urls[i]}`)
+        return // Success, exit the loop
+      } catch (error) {
+        console.warn(`Failed to load ${description} from ${urls[i]}:`, error)
+        if (i === urls.length - 1) {
+          throw new Error(`Failed to load ${description} from all sources`)
+        }
+      }
+    }
+  }
+
+  // Load Leaflet and Leaflet Draw from CDN with fallbacks
+  const loadLeafletScripts = async () => {
+    try {
+      // Check if already loaded
+      if (window.L && window.L.Control && window.L.Control.Draw) {
+        setScriptsLoaded(true)
+        return
+      }
+
+      // Remove existing scripts and styles to prevent conflicts
+      document.querySelectorAll('link[href*="leaflet"], script[src*="leaflet"]').forEach((el) => el.remove())
+
+      // Clear any existing Leaflet instance
+      if (window.L) {
+        delete window.L
+      }
+
+      // Load Leaflet CSS with fallbacks
+      const leafletCSSUrls = [
+        "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
+        "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css",
+      ]
+      await loadCSS(leafletCSSUrls, "Leaflet CSS")
+
+      // Load Leaflet Draw CSS with fallbacks
+      const leafletDrawCSSUrls = [
+        "https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css",
+        "https://cdn.jsdelivr.net/npm/leaflet-draw@1.0.4/dist/leaflet.draw.css",
+        "https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css",
+      ]
+      await loadCSS(leafletDrawCSSUrls, "Leaflet Draw CSS")
+
+      // Load Leaflet JS with fallbacks
+      const leafletJSUrls = [
+        "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
+        "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js",
+      ]
+      await loadJS(leafletJSUrls, "Leaflet JS", () => !!window.L)
+
+      // Verify Leaflet loaded correctly
+      if (!window.L) {
+        throw new Error("Leaflet failed to initialize")
+      }
+
+      // Load Leaflet Draw JS with fallbacks
+      const leafletDrawJSUrls = [
+        "https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js",
+        "https://cdn.jsdelivr.net/npm/leaflet-draw@1.0.4/dist/leaflet.draw.js",
+        "https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js",
+      ]
+      await loadJS(
+        leafletDrawJSUrls,
+        "Leaflet Draw JS",
+        () => !!(window.L && window.L.Control && window.L.Control.Draw),
+      )
+
+      // Final verification
+      if (!window.L || !window.L.Control || !window.L.Control.Draw) {
+        throw new Error("Leaflet or Leaflet Draw not properly initialized")
+      }
+
+      setScriptsLoaded(true)
+      console.log("All Leaflet scripts loaded successfully")
+    } catch (error) {
+      console.error("Failed to load Leaflet scripts:", error)
+      setMapError(
+        `Failed to load mapping libraries: ${error.message}. Please check your internet connection and try refreshing.`,
+      )
+      setIsLoading(false)
+    }
+  }
+
+  // Initial script loading
+  useEffect(() => {
+    loadLeafletScripts()
+  }, [])
 
   // Get user's location
   useEffect(() => {
@@ -54,112 +234,97 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
         },
         (error) => {
           console.log("Geolocation error:", error)
-          // Default to India (Bangalore) if geolocation fails
-          setUserLocation([12.9716, 77.5946])
+          // Default to agricultural region (Central Valley, California)
+          setUserLocation([36.7783, -119.4179])
         },
-        { timeout: 10000, enableHighAccuracy: false }
+        { timeout: 10000, enableHighAccuracy: false },
       )
     } else {
-      // Default to India if geolocation not supported
-      setUserLocation([12.9716, 77.5946])
+      // Default location if geolocation not supported
+      setUserLocation([36.7783, -119.4179])
     }
   }, [])
 
+  // Initialize map when scripts are loaded and location is available
   useEffect(() => {
-    if (!mapContainer.current || !userLocation) return
+    if (!mapContainer.current || !userLocation || !scriptsLoaded || !window.L) return
 
     try {
+      // Fix for default markers in Leaflet
+      delete (window.L.Icon.Default.prototype as any)._getIconUrl
+      window.L.Icon.Default.mergeOptions({
+        iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
+        iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
+        shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+      })
+
       // Initialize map
-      map.current = L.map(mapContainer.current, {
+      map.current = window.L.map(mapContainer.current, {
         center: userLocation,
         zoom: 13,
         zoomControl: false,
-        attributionControl: false,
+        attributionControl: true,
       })
 
       // Add zoom control to top-right
-      L.control.zoom({ position: "topright" }).addTo(map.current)
+      window.L.control.zoom({ position: "topright" }).addTo(map.current)
 
-      // Add attribution
-      L.control.attribution({
-        position: "bottomright",
-        prefix: false,
-      }).addTo(map.current)
-
-      // Add multiple tile layer options with fallbacks
-      const tileLayers = {
-        satellite: L.tileLayer(
-          "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-          {
-            attribution: "© Esri, Maxar, Earthstar Geographics",
-            maxZoom: 19,
-            errorTileUrl: "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjU2IiBoZWlnaHQ9IjI1NiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjU2IiBoZWlnaHQ9IjI1NiIgZmlsbD0iI2Y0ZjRmNCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNHB4IiBmaWxsPSIjOTk5Ij5UaWxlIEVycm9yPC90ZXh0Pjwvc3ZnPg=="
-          }
-        ),
-        osm: L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution: "© OpenStreetMap contributors",
+      // Single satellite tile layer (Esri World Imagery)
+      const satelliteLayer = window.L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        {
+          attribution: "© Esri, Maxar, Earthstar Geographics",
           maxZoom: 19,
-        }),
-        hybrid: L.tileLayer(
-          "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
-          {
-            attribution: "© Google",
-            maxZoom: 20,
+          errorTileUrl:
+            "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjU2IiBoZWlnaHQ9IjI1NiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjU2IiBoZWlnaHQ9IjI1NiIgZmlsbD0iI2Y0ZjRmNCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNHB4IiBmaWxsPSIjOTk5Ij5Mb2FkaW5nLi4uPC90ZXh0Pjwvc3ZnPg==",
+        },
+      )
+
+      satelliteLayer.addTo(map.current)
+
+      // Handle tile loading errors with retry
+      satelliteLayer.on("tileerror", (e: any) => {
+        console.warn("Tile loading error:", e)
+        // Retry after a short delay
+        setTimeout(() => {
+          if (map.current) {
+            map.current.invalidateSize()
           }
-        ),
-      }
-
-      // Try satellite first, fallback to OSM if it fails
-      let currentLayer = tileLayers.satellite
-      currentLayer.addTo(map.current)
-
-      // Handle tile loading errors
-      currentLayer.on("tileerror", () => {
-        if (currentLayer === tileLayers.satellite) {
-          console.log("Satellite tiles failed, switching to OSM")
-          map.current?.removeLayer(currentLayer)
-          currentLayer = tileLayers.osm
-          currentLayer.addTo(map.current!)
-        }
+        }, 2000)
       })
 
-      // Layer control
-      L.control.layers(
-        {
-          "Satellite": tileLayers.satellite,
-          "OpenStreetMap": tileLayers.osm,
-          "Hybrid": tileLayers.hybrid,
-        },
-        {},
-        { position: "topright" }
-      ).addTo(map.current)
-
-      // Initialize drawing
-      drawnItems.current = new L.FeatureGroup()
+      // Initialize drawing layer
+      drawnItems.current = new window.L.FeatureGroup()
       map.current.addLayer(drawnItems.current)
 
-      // Drawing options
+      // Drawing control options
       const drawOptions = {
-        position: "topleft" as L.ControlPosition,
+        position: "topleft",
         draw: {
           polygon: {
             allowIntersection: false,
             drawError: {
-              color: "#e1e100",
-              message: "<strong>Error:</strong> Shape edges cannot cross!",
+              color: "#ef4444",
+              message: "<strong>Error:</strong> Field boundaries cannot cross!",
             },
             shapeOptions: {
-              color: "#3b82f6",
-              weight: 2,
-              fillOpacity: 0.1,
+              color: "#16a34a",
+              weight: 3,
+              fillOpacity: 0.2,
+              fillColor: "#16a34a",
             },
+            showArea: true,
+            metric: true,
           },
           rectangle: {
             shapeOptions: {
-              color: "#3b82f6",
-              weight: 2,
-              fillOpacity: 0.1,
+              color: "#16a34a",
+              weight: 3,
+              fillOpacity: 0.2,
+              fillColor: "#16a34a",
             },
+            showArea: true,
+            metric: true,
           },
           circle: false,
           circlemarker: false,
@@ -169,16 +334,18 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
         edit: {
           featureGroup: drawnItems.current,
           remove: true,
+          edit: true,
         },
       }
 
-      drawControl.current = new L.Control.Draw(drawOptions)
+      drawControl.current = new window.L.Control.Draw(drawOptions)
       map.current.addControl(drawControl.current)
 
       // Drawing event handlers
-      map.current.on(L.Draw.Event.CREATED, (e: any) => {
+      map.current.on(window.L.Draw.Event.CREATED, (e: any) => {
         const layer = e.layer
         drawnItems.current?.addLayer(layer)
+        setHasDrawnItems(true)
 
         // Convert to GeoJSON and calculate area
         const geoJson = layer.toGeoJSON()
@@ -188,7 +355,7 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
         onFieldSelected(geoJson)
       })
 
-      map.current.on(L.Draw.Event.EDITED, (e: any) => {
+      map.current.on(window.L.Draw.Event.EDITED, (e: any) => {
         const layers = e.layers
         layers.eachLayer((layer: any) => {
           const geoJson = layer.toGeoJSON()
@@ -198,8 +365,11 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
         })
       })
 
-      map.current.on(L.Draw.Event.DELETED, () => {
-        onFieldSelected(null)
+      map.current.on(window.L.Draw.Event.DELETED, () => {
+        if (drawnItems.current.getLayers().length === 0) {
+          setHasDrawnItems(false)
+          onFieldSelected(null)
+        }
       })
 
       // Map ready
@@ -207,17 +377,9 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
         setIsLoading(false)
         setMapError(null)
       })
-
-      // Handle map errors
-      map.current.on("error", (e) => {
-        console.error("Map error:", e)
-        setMapError("Failed to load map tiles. Please check your internet connection.")
-        setIsLoading(false)
-      })
-
     } catch (error) {
       console.error("Failed to initialize map:", error)
-      setMapError("Failed to initialize map. Please refresh the page.")
+      setMapError("Failed to initialize map. Please try refreshing.")
       setIsLoading(false)
     }
 
@@ -227,32 +389,48 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
         map.current = null
       }
     }
-  }, [userLocation, onFieldSelected])
+  }, [userLocation, scriptsLoaded, onFieldSelected])
 
   // Handle analysis overlay
   useEffect(() => {
-    if (!map.current || !analysisOverlay) return
+    if (!map.current || !analysisOverlay || !window.L) return
 
     // Remove existing overlay
     if (overlayLayer.current) {
       map.current.removeLayer(overlayLayer.current)
     }
 
-    // Add new overlay
-    overlayLayer.current = L.geoJSON(analysisOverlay, {
-      style: (feature) => ({
-        fillColor: feature?.properties?.color || "#22c55e",
-        weight: 2,
-        opacity: 0.8,
-        color: feature?.properties?.color || "#22c55e",
-        fillOpacity: 0.6,
-      }),
-      onEachFeature: (feature, layer) => {
+    // Add new overlay with health zone colors
+    overlayLayer.current = window.L.geoJSON(analysisOverlay, {
+      style: (feature: any) => {
+        const zone = feature?.properties?.zone || "unknown"
+        let color = "#22c55e" // default green
+
+        if (zone === "healthy")
+          color = "#22c55e" // green
+        else if (zone === "moderate")
+          color = "#f59e0b" // yellow
+        else if (zone === "stressed") color = "#ef4444" // red
+
+        return {
+          fillColor: color,
+          weight: 2,
+          opacity: 0.8,
+          color: color,
+          fillOpacity: 0.6,
+        }
+      },
+      onEachFeature: (feature: any, layer: any) => {
         if (feature.properties) {
+          const zone = feature.properties.zone || "Unknown"
+          const ndvi = feature.properties.ndvi || "N/A"
           layer.bindPopup(`
-            <div class="p-2">
-              <h3 class="font-semibold text-sm mb-1">Zone: ${feature.properties.zone || "Unknown"}</h3>
-              <p class="text-xs text-gray-600">NDVI: ${feature.properties.ndvi || "N/A"}</p>
+            <div class="p-3 min-w-[200px]">
+              <h3 class="font-semibold text-sm mb-2 text-gray-800">Health Zone</h3>
+              <div class="space-y-1">
+                <p class="text-xs"><strong>Status:</strong> <span class="capitalize">${zone}</span></p>
+                <p class="text-xs"><strong>NDVI:</strong> ${ndvi}</p>
+              </div>
             </div>
           `)
         }
@@ -266,18 +444,20 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
   const calculatePolygonArea = (coordinates: number[][]) => {
     if (!coordinates || coordinates.length < 3) return 0
 
-    // Use Leaflet's built-in area calculation
-    const latLngs = coordinates.map(coord => L.latLng(coord[1], coord[0]))
-    const polygon = L.polygon(latLngs)
-    const areaInSquareMeters = L.GeometryUtil ? 
-      L.GeometryUtil.geodesicArea(latLngs) : 
-      // Fallback calculation
-      Math.abs(coordinates.reduce((area, coord, i) => {
-        const j = (i + 1) % coordinates.length
-        return area + (coord[0] * coordinates[j][1] - coordinates[j][0] * coord[1])
-      }, 0)) / 2 * 111320 * 111320
+    // Simple polygon area calculation using shoelace formula
+    let area = 0
+    const n = coordinates.length - 1
 
-    return areaInSquareMeters / 10000 // Convert to hectares
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n
+      area += coordinates[i][0] * coordinates[j][1]
+      area -= coordinates[j][0] * coordinates[i][1]
+    }
+
+    area = Math.abs(area) / 2
+    // Convert to hectares (approximate for small areas)
+    const hectares = (area * 111320 * 111320) / 10000
+    return hectares
   }
 
   const centerOnUserLocation = () => {
@@ -291,7 +471,15 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
       <div className="w-full h-full flex items-center justify-center bg-gray-100">
         <Alert className="max-w-md">
           <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>{mapError}</AlertDescription>
+          <AlertDescription>
+            <div className="space-y-3">
+              <p className="font-medium">{mapError}</p>
+              <Button onClick={refreshMap} size="sm" className="w-full">
+                <RotateCcw className="h-4 w-4 mr-2" />
+                Refresh Map
+              </Button>
+            </div>
+          </AlertDescription>
         </Alert>
       </div>
     )
@@ -304,28 +492,58 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
       {isLoading && (
         <div className="absolute inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-[1000]">
           <div className="text-center text-white">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
-            <p className="text-sm">Loading map tiles...</p>
+            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3" />
+            <p className="text-lg font-medium">Loading Satellite Map</p>
+            <p className="text-sm text-gray-300 mt-1">Powered by Esri & Leaflet</p>
           </div>
         </div>
       )}
 
-      {/* User location button */}
-      {userLocation && !isLoading && (
-        <Button
-          onClick={centerOnUserLocation}
-          size="sm"
-          variant="secondary"
-          className="absolute bottom-4 right-4 bg-white hover:bg-gray-50 shadow-lg z-[1000]"
-        >
-          <Navigation className="h-4 w-4 mr-1" />
-          <span className="hidden sm:inline">My Location</span>
+      {/* Map Controls */}
+      <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-[1000]">
+        {/* Clear Selection Button */}
+        {hasDrawnItems && (
+          <Button
+            onClick={clearSelection}
+            size="sm"
+            variant="destructive"
+            className="bg-red-600 hover:bg-red-700 shadow-lg"
+          >
+            <Trash2 className="h-4 w-4 mr-1" />
+            <span className="hidden sm:inline">Clear</span>
+          </Button>
+        )}
+
+        {/* User Location Button */}
+        {userLocation && !isLoading && (
+          <Button
+            onClick={centerOnUserLocation}
+            size="sm"
+            variant="secondary"
+            className="bg-white hover:bg-gray-50 shadow-lg"
+          >
+            <Navigation className="h-4 w-4 mr-1" />
+            <span className="hidden sm:inline">My Location</span>
+          </Button>
+        )}
+
+        {/* Refresh Button */}
+        <Button onClick={refreshMap} size="sm" variant="outline" className="bg-white hover:bg-gray-50 shadow-lg">
+          <RotateCcw className="h-4 w-4 mr-1" />
+          <span className="hidden sm:inline">Refresh</span>
         </Button>
-      )}
+      </div>
     </div>
   )
 })
 
 MapComponent.displayName = "MapComponent"
+
+// Extend Window interface for TypeScript
+declare global {
+  interface Window {
+    L: any
+  }
+}
 
 export default MapComponent
