@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { JWT } from 'google-auth-library';
-import ee from '@google/earthengine';
 
 // Helper: Validate GeoJSON Polygon
 function validateGeometry(geometry: any): [boolean, string] {
@@ -26,10 +25,8 @@ function createResponse(success: boolean, message: string, data?: any) {
   };
 }
 
-// Initialize Google Earth Engine (service account)
-let geeInitialized = false;
-async function initializeGEE() {
-  if (geeInitialized) return;
+// Obtain a short-lived OAuth2 access token for the service account.
+async function getEarthEngineToken() {
   const privateKey = process.env.GEE_PRIVATE_KEY?.replace(/\\n/g, '\n');
   const clientEmail = process.env.GEE_CLIENT_EMAIL;
   if (!privateKey || !clientEmail) throw new Error('Missing GEE credentials');
@@ -38,23 +35,14 @@ async function initializeGEE() {
     key: privateKey,
     scopes: ['https://www.googleapis.com/auth/earthengine'],
   });
-  await new Promise((resolve, reject) => {
-    ee.data.authenticateViaPrivateKey(
-      { client_email: clientEmail, private_key: privateKey },
-      () => {
-        ee.initialize(null, null, () => {
-          geeInitialized = true;
-          resolve(true);
-        }, reject);
-      },
-      reject
-    );
-  });
+  const { access_token } = await jwt.authorize();
+  if (!access_token) throw new Error('Failed to acquire Earth Engine access token');
+  return access_token;
 }
 
 export async function POST(req: NextRequest) {
   try {
-    await initializeGEE();
+    const token = await getEarthEngineToken();
     if (req.headers.get('content-type') !== 'application/json') {
       return NextResponse.json(createResponse(false, 'Request must be JSON'), { status: 400 });
     }
@@ -64,36 +52,36 @@ export async function POST(req: NextRequest) {
     const [isValid, validationMessage] = validateGeometry(geometry);
     if (!isValid) return NextResponse.json(createResponse(false, validationMessage), { status: 400 });
 
-    // Example: Calculate NDVI for the polygon using Sentinel-2
-    const field = ee.Geometry.Polygon(geometry.coordinates);
-    const collection = ee.ImageCollection('COPERNICUS/S2_SR')
-      .filterBounds(field)
-      .filterDate('2024-01-01', '2024-12-31')
-      .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20));
-    const image = collection.median();
-    const ndvi = image.normalizedDifference(['B8', 'B4']).rename('NDVI');
-    const meanDict = ndvi.reduceRegion({
-      reducer: ee.Reducer.mean(),
-      geometry: field,
-      scale: 10,
-      maxPixels: 1e9,
+    // Build an Earth Engine expression that computes mean NDVI over the user field.
+    const expression = `var field = ee.Geometry(${JSON.stringify(geometry)});\n\nvar collection = ee.ImageCollection('COPERNICUS/S2_SR')\n  .filterBounds(field)\n  .filterDate('2024-01-01', '2024-12-31')\n  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20));\n\nvar image = collection.median();\nvar ndvi = image.normalizedDifference(['B8', 'B4']).rename('NDVI');\nvar mean = ndvi.reduceRegion({ reducer: ee.Reducer.mean(), geometry: field, scale: 10, maxPixels: 1e9 }).get('NDVI');\n\nreturn mean;`;
+
+    // Call the Earth Engine REST API directly.
+    const response = await fetch('https://earthengine.googleapis.com/v1alpha/projects/earthengine-legacy:value:compute', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ expression }),
     });
-    const ndviValue = await new Promise<number>((resolve, reject) => {
-      meanDict.getInfo((result: any, err: any) => {
-        if (err) reject(err);
-        else resolve(result.NDVI);
-      });
-    });
-    // Example result (expand as needed)
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Earth Engine API error: ${response.status} - ${errText}`);
+    }
+
+    const resultJson: any = await response.json();
+    const ndviValue = resultJson.result ?? null;
+
     const analysisResult = {
       summary: {
-        field_area_hectares: field.area().divide(10000).getInfo(),
         ndvi: ndviValue,
       },
-      recommendations: ndviValue > 0.5 ? ['Good vegetation health.'] : ['Monitor for stress.'],
+      recommendations: ndviValue !== null && ndviValue > 0.5 ? ['Good vegetation health.'] : ['Monitor for stress.'],
     };
     return NextResponse.json(createResponse(true, 'Field analysis completed successfully', analysisResult));
   } catch (e: any) {
+    console.error('Analyze field error:', e);
     return NextResponse.json(createResponse(false, e.message || 'Internal server error'), { status: 500 });
   }
 }
