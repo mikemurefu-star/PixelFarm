@@ -1,0 +1,507 @@
+"use client"
+
+import { useState, useRef } from "react"
+import dynamic from "next/dynamic"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { Loader2, MapPin, Satellite, TrendingUp, Droplets, Leaf, Menu, X, AlertTriangle, Wifi, WifiOff } from 'lucide-react'
+import axios from "axios"
+
+// Dynamically import the map component to avoid SSR issues
+const MapComponent = dynamic(() => import("@/components/map-component"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-green-50 to-blue-50">
+      <div className="text-center">
+        <Satellite className="h-16 w-16 text-green-600 mx-auto mb-4 animate-pulse" />
+        <Loader2 className="h-8 w-8 animate-spin text-green-600 mx-auto mb-4" />
+        <p className="text-gray-700 text-lg font-medium">Loading Satellite Map...</p>
+        <p className="text-gray-500 text-sm mt-2">Initializing OpenStreetMap tiles</p>
+      </div>
+    </div>
+  ),
+})
+
+interface AnalysisResult {
+  summary: {
+    field_area_hectares: number
+    avg_ndvi: number
+    avg_evi: number
+    avg_ndwi: number
+    avg_ndre: number
+    health_zones: {
+      healthy: number
+      moderate: number
+      stressed: number
+    }
+    recommendations: string[]
+    analysis_date: string
+    image_count: number
+  }
+  geojson_overlay: any
+}
+
+interface ApiError {
+  message: string
+  code?: string
+  details?: string
+}
+
+export default function AgriAIMapInsights() {
+  const [selectedField, setSelectedField] = useState<any>(null)
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [error, setError] = useState<ApiError | null>(null)
+  const [isOnline, setIsOnline] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const mapRef = useRef<any>(null)
+
+  // Check network status
+  useState(() => {
+    const handleOnline = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
+    
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  })
+
+  const validateField = (field: any): boolean => {
+    if (!field || !field.geometry) {
+      setError({ message: "Invalid field geometry", code: "INVALID_GEOMETRY" })
+      return false
+    }
+
+    if (field.geometry.type !== "Polygon") {
+      setError({ message: "Field must be a polygon", code: "INVALID_SHAPE" })
+      return false
+    }
+
+    const coordinates = field.geometry.coordinates[0]
+    if (!coordinates || coordinates.length < 4) {
+      setError({ message: "Polygon must have at least 3 points", code: "INSUFFICIENT_POINTS" })
+      return false
+    }
+
+    // Check if area is reasonable (between 0.1 and 10000 hectares)
+    const area = field.properties?.area || 0
+    if (area < 0.1 || area > 10000) {
+      setError({ 
+        message: `Field area (${area.toFixed(1)} ha) is outside valid range (0.1 - 10,000 ha)`, 
+        code: "INVALID_AREA" 
+      })
+      return false
+    }
+
+    return true
+  }
+
+  const analyzeField = async () => {
+    if (!selectedField || !validateField(selectedField)) return
+
+    if (!isOnline) {
+      setError({ message: "No internet connection. Please check your network.", code: "OFFLINE" })
+      return
+    }
+
+    setIsAnalyzing(true)
+    setError(null)
+
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || '/api'
+      
+      const response = await axios.post(`${apiUrl}/analyze_field`, {
+        geometry: selectedField.geometry,
+        properties: selectedField.properties
+      }, {
+        timeout: 30000, // 30 second timeout
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.data && response.data.summary) {
+        setAnalysisResult(response.data)
+        setSidebarOpen(true) // Auto-open sidebar on mobile after analysis
+      } else {
+        throw new Error("Invalid response format from server")
+      }
+
+    } catch (err: any) {
+      console.error("Analysis error:", err)
+      
+      if (err.code === 'ECONNABORTED') {
+        setError({ 
+          message: "Analysis timeout. The field may be too large or server is busy.", 
+          code: "TIMEOUT" 
+        })
+      } else if (err.response) {
+        // Server responded with error
+        const serverError = err.response.data
+        setError({
+          message: serverError.message || "Server error occurred",
+          code: serverError.code || "SERVER_ERROR",
+          details: serverError.details
+        })
+      } else if (err.request) {
+        // Network error
+        setError({ 
+          message: "Cannot reach analysis server. Please check your connection.", 
+          code: "NETWORK_ERROR" 
+        })
+      } else {
+        setError({ 
+          message: "Unexpected error during analysis. Please try again.", 
+          code: "UNKNOWN_ERROR" 
+        })
+      }
+    } finally {
+      setIsAnalyzing(false)
+    }
+  }
+
+  const clearAnalysis = () => {
+    setAnalysisResult(null)
+    setSelectedField(null)
+    setError(null)
+    setSidebarOpen(false)
+    if (mapRef.current) {
+      mapRef.current.clearDrawing()
+    }
+  }
+
+  const retryAnalysis = () => {
+    setError(null)
+    analyzeField()
+  }
+
+  const SidebarContent = () => (
+    <div className="h-full overflow-y-auto">
+      {analysisResult ? (
+        <div className="p-4 lg:p-6 space-y-4 lg:space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg lg:text-xl font-semibold text-gray-900">Analysis Results</h2>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSidebarOpen(false)}
+              className="lg:hidden"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {/* Field Overview */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium">Field Overview</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-600">Area</span>
+                <span className="text-sm font-medium">{analysisResult.summary.field_area_hectares} hectares</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-600">Analysis Date</span>
+                <span className="text-sm font-medium">{analysisResult.summary.analysis_date}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-gray-600">Satellite Images</span>
+                <span className="text-sm font-medium">{analysisResult.summary.image_count} images</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Vegetation Indices */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center">
+                <Leaf className="h-4 w-4 mr-2 text-green-600" />
+                Vegetation Health
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {[
+                { label: "NDVI (Vegetation)", value: analysisResult.summary.avg_ndvi, color: "bg-green-600" },
+                { label: "EVI (Enhanced)", value: analysisResult.summary.avg_evi, color: "bg-green-500" },
+                { label: "NDWI (Water)", value: analysisResult.summary.avg_ndwi, color: "bg-blue-500" },
+                { label: "NDRE (Red Edge)", value: analysisResult.summary.avg_ndre, color: "bg-purple-500" }
+              ].map((index) => (
+                <div key={index.label} className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-600">{index.label}</span>
+                    <span className="text-sm font-medium">{index.value.toFixed(3)}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className={`${index.color} h-2 rounded-full transition-all duration-500`}
+                      style={{ width: `${Math.max(0, Math.min(100, index.value * 100))}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          {/* Health Zones */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center">
+                <TrendingUp className="h-4 w-4 mr-2 text-blue-600" />
+                Health Distribution
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {[
+                { label: "Healthy", value: analysisResult.summary.health_zones.healthy, color: "bg-green-500" },
+                { label: "Moderate", value: analysisResult.summary.health_zones.moderate, color: "bg-yellow-500" },
+                { label: "Stressed", value: analysisResult.summary.health_zones.stressed, color: "bg-red-500" }
+              ].map((zone) => (
+                <div key={zone.label} className="flex justify-between items-center">
+                  <div className="flex items-center">
+                    <div className={`w-3 h-3 ${zone.color} rounded-full mr-2`} />
+                    <span className="text-sm text-gray-600">{zone.label}</span>
+                  </div>
+                  <span className="text-sm font-medium">{zone.value}%</span>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          {/* Recommendations */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center">
+                <Droplets className="h-4 w-4 mr-2 text-blue-600" />
+                AI Recommendations
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-2">
+                {analysisResult.summary.recommendations.map((rec, index) => (
+                  <li key={index} className="text-sm text-gray-700 flex items-start">
+                    <span className="w-2 h-2 bg-blue-500 rounded-full mt-2 mr-3 flex-shrink-0" />
+                    {rec}
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        <div className="p-4 lg:p-6">
+          <div className="text-center py-8 lg:py-12">
+            {selectedField ? (
+              <>
+                <TrendingUp className="h-12 w-12 text-green-500 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Field Selected</h3>
+                <p className="text-sm text-gray-600 mb-6">
+                  Ready to analyze {selectedField.properties?.area ? 
+                    `${selectedField.properties.area.toFixed(1)} hectare field` : 
+                    "your selected field"
+                  }
+                </p>
+                <Button 
+                  onClick={analyzeField} 
+                  className="bg-green-600 hover:bg-green-700 w-full lg:w-auto"
+                  disabled={isAnalyzing}
+                >
+                  {isAnalyzing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      <Satellite className="h-4 w-4 mr-2" />
+                      Start Analysis
+                    </>
+                  )}
+                </Button>
+              </>
+            ) : (
+              <>
+                <MapPin className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No Field Selected</h3>
+                <p className="text-sm text-gray-600 mb-6">
+                  Draw a field boundary on the map to get AI-powered agricultural insights
+                </p>
+                <div className="space-y-4 text-left">
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h4 className="font-medium text-gray-900 mb-2">How to get started:</h4>
+                    <ol className="text-sm text-gray-600 space-y-1 list-decimal list-inside">
+                      <li>Navigate to your agricultural field</li>
+                      <li>Use drawing tools to outline field boundaries</li>
+                      <li>Complete the polygon shape</li>
+                      <li>Click "Analyze Field" for AI insights</li>
+                    </ol>
+                  </div>
+                  <div className="bg-blue-50 p-4 rounded-lg">
+                    <h4 className="font-medium text-blue-900 mb-2">Analysis includes:</h4>
+                    <ul className="text-sm text-blue-700 space-y-1">
+                      <li>• Vegetation health indices (NDVI, EVI)</li>
+                      <li>• Water stress detection (NDWI)</li>
+                      <li>• Nutrient analysis (NDRE)</li>
+                      <li>• Zone-based recommendations</li>
+                    </ul>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+
+  return (
+    <div className="h-screen flex flex-col bg-gray-50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 px-4 lg:px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="bg-green-600 p-2 rounded-lg">
+              <Satellite className="h-5 w-5 lg:h-6 lg:w-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-xl lg:text-2xl font-bold text-gray-900">AgriAI Map Insights</h1>
+              <p className="text-xs lg:text-sm text-gray-600">AI-powered agricultural field analysis</p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            {!isOnline && (
+              <Badge variant="destructive" className="hidden lg:flex">
+                <WifiOff className="h-3 w-3 mr-1" />
+                Offline
+              </Badge>
+            )}
+            <Badge variant="secondary" className="bg-green-100 text-green-800 hidden lg:flex">
+              <Wifi className="h-3 w-3 mr-1" />
+              OpenStreetMap
+            </Badge>
+            <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+              <SheetTrigger asChild>
+                <Button variant="outline" size="sm" className="lg:hidden">
+                  <Menu className="h-4 w-4" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-full sm:w-96 p-0">
+                <SidebarContent />
+              </SheetContent>
+            </Sheet>
+          </div>
+        </div>
+      </header>
+
+      <div className="flex-1 flex">
+        {/* Map Container */}
+        <div className="flex-1 relative">
+          <MapComponent
+            ref={mapRef}
+            onFieldSelected={setSelectedField}
+            analysisOverlay={analysisResult?.geojson_overlay}
+          />
+
+          {/* Map Controls */}
+          <div className="absolute top-4 left-4 space-y-2 z-10">
+            <Button
+              onClick={analyzeField}
+              disabled={!selectedField || isAnalyzing || !isOnline}
+              className="bg-green-600 hover:bg-green-700 min-w-[140px] shadow-lg"
+            >
+              {isAnalyzing ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Analyzing...
+                </>
+              ) : (
+                <>
+                  <TrendingUp className="h-4 w-4 mr-2" />
+                  Analyze Field
+                </>
+              )}
+            </Button>
+
+            {(selectedField || analysisResult) && (
+              <Button
+                onClick={clearAnalysis}
+                variant="outline"
+                className="bg-white hover:bg-gray-50 min-w-[140px] shadow-lg"
+                disabled={isAnalyzing}
+              >
+                <X className="h-4 w-4 mr-2" />
+                Clear Selection
+              </Button>
+            )}
+          </div>
+
+          {/* Status Messages */}
+          <div className="absolute bottom-4 left-4 right-4 lg:right-auto lg:max-w-md space-y-2 z-10">
+            {!isOnline && (
+              <Alert variant="destructive" className="bg-white/95 backdrop-blur-sm">
+                <WifiOff className="h-4 w-4" />
+                <AlertDescription>
+                  No internet connection. Please check your network to analyze fields.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {error && (
+              <Alert variant="destructive" className="bg-white/95 backdrop-blur-sm">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  <div className="space-y-2">
+                    <p className="font-medium">{error.message}</p>
+                    {error.details && (
+                      <p className="text-xs opacity-75">{error.details}</p>
+                    )}
+                    {error.code === "NETWORK_ERROR" && (
+                      <Button 
+                        onClick={retryAnalysis} 
+                        size="sm" 
+                        variant="outline"
+                        className="mt-2"
+                      >
+                        Retry Analysis
+                      </Button>
+                    )}
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {!selectedField && !analysisResult && !isAnalyzing && !error && (
+              <Alert className="bg-white/95 backdrop-blur-sm border-blue-200">
+                <MapPin className="h-4 w-4 text-blue-600" />
+                <AlertDescription className="text-blue-800">
+                  <strong>Get started:</strong> Use the drawing tools to select your agricultural field
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {isAnalyzing && (
+              <Alert className="bg-blue-50/95 backdrop-blur-sm border-blue-200">
+                <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                <AlertDescription className="text-blue-800">
+                  <strong>Processing satellite data...</strong> This may take up to 30 seconds
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+        </div>
+
+        {/* Desktop Sidebar */}
+        <div className="hidden lg:block w-96 bg-white border-l border-gray-200">
+          <SidebarContent />
+        </div>
+      </div>
+    </div>
+  )
+}
