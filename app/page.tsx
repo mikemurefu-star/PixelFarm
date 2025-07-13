@@ -61,7 +61,6 @@ export default function AgriAIMapInsights() {
   const { toast } = useToast()
 
   // Check network status
-  import { useEffect } from "react"
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handleOnline = () => setIsOnline(true)
