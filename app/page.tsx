@@ -132,12 +132,6 @@ export default function AgriAIMapInsights() {
           "Content-Type": "application/json",
         },
       })
-          timeout: 45000, // 45 second timeout
-          headers: {
-            "Content-Type": "application/json",
-          },
-        },
-      )
 
       if (response.data.success && response.data.data) {
         setAnalysisResult(response.data.data)
