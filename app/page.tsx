@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import dynamic from "next/dynamic"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -61,7 +61,9 @@ export default function AgriAIMapInsights() {
   const { toast } = useToast()
 
   // Check network status
-  useState(() => {
+  import { useEffect } from "react"
+  useEffect(() => {
+    if (typeof window === "undefined") return;
     const handleOnline = () => setIsOnline(true)
     const handleOffline = () => setIsOnline(false)
 
@@ -72,7 +74,7 @@ export default function AgriAIMapInsights() {
       window.removeEventListener("online", handleOnline)
       window.removeEventListener("offline", handleOffline)
     }
-  })
+  }, [])
 
   const validateField = (field: any): string | null => {
     if (!field || !field.geometry) {
