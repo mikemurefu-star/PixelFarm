@@ -30,7 +30,7 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
 
   // Clear all drawn items
   const clearSelection = () => {
-    if (drawnItems.current && window.L) {
+    if (typeof window !== 'undefined' && drawnItems.current && window.L) {
       drawnItems.current.clearLayers()
       setHasDrawnItems(false)
       onFieldSelected(null)
@@ -247,19 +247,23 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
 
   // Initialize map when scripts are loaded and location is available
   useEffect(() => {
-    if (!mapContainer.current || !userLocation || !scriptsLoaded || !window.L) return
+    if (typeof window === 'undefined' || !mapContainer.current || !userLocation || !scriptsLoaded || !window.L) return
 
     try {
       // Fix for default markers in Leaflet
-      delete (window.L.Icon.Default.prototype as any)._getIconUrl
-      window.L.Icon.Default.mergeOptions({
+      if (typeof window !== 'undefined' && window.L && window.L.Icon && window.L.Icon.Default) {
+  delete (window.L.Icon.Default.prototype as any)._getIconUrl
+}
+      if (typeof window !== 'undefined' && window.L && window.L.Icon && window.L.Icon.Default) {
+  window.L.Icon.Default.mergeOptions({
         iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
         iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
         shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
       })
 
       // Initialize map
-      map.current = window.L.map(mapContainer.current, {
+      if (typeof window !== 'undefined' && window.L) {
+  map.current = window.L.map(mapContainer.current, {
         center: userLocation,
         zoom: 13,
         zoomControl: false,
@@ -267,10 +271,14 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
       })
 
       // Add zoom control to top-right
-      window.L.control.zoom({ position: "topright" }).addTo(map.current)
+      if (typeof window !== 'undefined' && window.L && map.current) {
+  window.L.control.zoom({ position: "topright" }).addTo(map.current)
+}
 
       // Single satellite tile layer (Esri World Imagery)
-      const satelliteLayer = window.L.tileLayer(
+      let satelliteLayer;
+if (typeof window !== 'undefined' && window.L) {
+  satelliteLayer = window.L.tileLayer(
         "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         {
           attribution: "© Esri, Maxar, Earthstar Geographics",
@@ -294,7 +302,9 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
       })
 
       // Initialize drawing layer
-      drawnItems.current = new window.L.FeatureGroup()
+      if (typeof window !== 'undefined' && window.L) {
+  drawnItems.current = new window.L.FeatureGroup()
+}
       map.current.addLayer(drawnItems.current)
 
       // Drawing control options
@@ -338,11 +348,16 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
         },
       }
 
-      drawControl.current = new window.L.Control.Draw(drawOptions)
-      map.current.addControl(drawControl.current)
+      if (typeof window !== 'undefined' && window.L && window.L.Control && window.L.Control.Draw) {
+  drawControl.current = new window.L.Control.Draw(drawOptions)
+}
+      if (map.current && drawControl.current) {
+  map.current.addControl(drawControl.current)
+}
 
       // Drawing event handlers
-      map.current.on(window.L.Draw.Event.CREATED, (e: any) => {
+      if (typeof window !== 'undefined' && map.current && window.L && window.L.Draw) {
+  map.current.on(window.L.Draw.Event.CREATED, (e: any) => {
         const layer = e.layer
         drawnItems.current?.addLayer(layer)
         setHasDrawnItems(true)
@@ -355,7 +370,8 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
         onFieldSelected(geoJson)
       })
 
-      map.current.on(window.L.Draw.Event.EDITED, (e: any) => {
+      if (typeof window !== 'undefined' && map.current && window.L && window.L.Draw) {
+  map.current.on(window.L.Draw.Event.EDITED, (e: any) => {
         const layers = e.layers
         layers.eachLayer((layer: any) => {
           const geoJson = layer.toGeoJSON()
@@ -365,7 +381,8 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
         })
       })
 
-      map.current.on(window.L.Draw.Event.DELETED, () => {
+      if (typeof window !== 'undefined' && map.current && window.L && window.L.Draw) {
+  map.current.on(window.L.Draw.Event.DELETED, () => {
         if (drawnItems.current.getLayers().length === 0) {
           setHasDrawnItems(false)
           onFieldSelected(null)
@@ -373,7 +390,8 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
       })
 
       // Map ready
-      map.current.whenReady(() => {
+      if (map.current && map.current.whenReady) {
+  map.current.whenReady(() => {
         setIsLoading(false)
         setMapError(null)
       })
@@ -393,7 +411,7 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
 
   // Handle analysis overlay
   useEffect(() => {
-    if (!map.current || !analysisOverlay || !window.L) return
+    if (typeof window === 'undefined' || !map.current || !analysisOverlay || !window.L) return
 
     // Remove existing overlay
     if (overlayLayer.current) {
@@ -401,7 +419,8 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
     }
 
     // Add new overlay with health zone colors
-    overlayLayer.current = window.L.geoJSON(analysisOverlay, {
+    if (typeof window !== 'undefined' && window.L && map.current) {
+  overlayLayer.current = window.L.geoJSON(analysisOverlay, {
       style: (feature: any) => {
         const zone = feature?.properties?.zone || "unknown"
         let color = "#22c55e" // default green
@@ -437,7 +456,9 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
       },
     })
 
-    overlayLayer.current.addTo(map.current)
+    if (overlayLayer.current && map.current) {
+  overlayLayer.current.addTo(map.current)
+}
   }, [analysisOverlay])
 
   // Calculate polygon area in hectares
