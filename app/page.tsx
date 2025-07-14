@@ -43,6 +43,7 @@ interface AnalysisResult {
     image_count: number
   }
   geojson_overlay: any
+  overlay_url?: string
 }
 
 interface ApiResponse {
@@ -187,6 +188,8 @@ export default function AgriAIMapInsights() {
         <div className="p-4 lg:p-6 space-y-4 lg:space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-lg lg:text-xl font-semibold text-gray-900">Analysis Results</h2>
+            <Button variant="outline" size="sm" onClick={clearAnalysis} className="ml-2">Clear</Button>
+
             <Button variant="ghost" size="sm" onClick={() => setSidebarOpen(false)} className="lg:hidden">
               <X className="h-4 w-4" />
             </Button>
@@ -203,11 +206,25 @@ export default function AgriAIMapInsights() {
                 <span className="text-sm font-medium">{analysisResult.summary.field_area_hectares} hectares</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-gray-600">Analysis Date</span>
+                <span className="text-xs text-gray-500 font-medium flex items-center">NDVI (Vegetation)
+                  <span className="ml-1 cursor-pointer group relative">
+                    <svg width="14" height="14" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#888" strokeWidth="2" fill="#fff"/><text x="12" y="17" textAnchor="middle" fontSize="13" fill="#888">i</text></svg>
+                    <span className="hidden group-hover:block absolute left-1/2 -translate-x-1/2 top-6 z-50 min-w-[180px] bg-white border border-gray-200 shadow-lg rounded-md p-2 text-xs text-gray-700 font-normal">
+                      NDVI shows how healthy and green the plants are. Higher values mean more vegetation.
+                    </span>
+                  </span>
+                </span>
                 <span className="text-sm font-medium">{analysisResult.summary.analysis_date}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-gray-600">Satellite Images</span>
+                <span className="text-xs text-gray-500 font-medium flex items-center">NDRE (Red Edge)
+                  <span className="ml-1 cursor-pointer group relative">
+                    <svg width="14" height="14" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#888" strokeWidth="2" fill="#fff"/><text x="12" y="17" textAnchor="middle" fontSize="13" fill="#888">i</text></svg>
+                    <span className="hidden group-hover:block absolute left-1/2 -translate-x-1/2 top-6 z-50 min-w-[180px] bg-white border border-gray-200 shadow-lg rounded-md p-2 text-xs text-gray-700 font-normal">
+                      NDRE helps detect plant stress and nutrient levels. Higher values often mean healthier crops.
+                    </span>
+                  </span>
+                </span>
                 <span className="text-sm font-medium">{analysisResult.summary.image_count} images</span>
               </div>
             </CardContent>
@@ -217,26 +234,34 @@ export default function AgriAIMapInsights() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium flex items-center">
-                <Leaf className="h-4 w-4 mr-2 text-green-600" />
+                <TrendingUp className="h-4 w-4 mr-2 text-green-600" />
                 Vegetation Health
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {[
-                { label: "NDVI (Vegetation)", value: analysisResult.summary.avg_ndvi, color: "bg-green-600" },
-                { label: "EVI (Enhanced)", value: analysisResult.summary.avg_evi, color: "bg-green-500" },
-                { label: "NDWI (Water)", value: analysisResult.summary.avg_ndwi, color: "bg-blue-500" },
-                { label: "NDRE (Red Edge)", value: analysisResult.summary.avg_ndre, color: "bg-purple-500" },
+                { label: "NDVI (Vegetation)", value: analysisResult.summary.avg_ndvi, color: "bg-green-600", info: "NDVI shows how healthy and green the plants are. Higher values mean more vegetation." },
+                { label: "EVI (Enhanced)", value: analysisResult.summary.avg_evi, color: "bg-green-500", info: "EVI is an enhanced version of NDVI, providing more accurate vegetation health data." },
+                { label: "NDWI (Water)", value: analysisResult.summary.avg_ndwi, color: "bg-blue-500", info: "NDWI helps detect water stress in plants. Lower values often mean more water stress." },
+                { label: "NDRE (Red Edge)", value: analysisResult.summary.avg_ndre, color: "bg-purple-500", info: "NDRE helps detect plant stress and nutrient levels. Higher values often mean healthier crops." },
               ].map((index) => (
                 <div key={index.label} className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-sm text-gray-600">{index.label}</span>
-                    <span className="text-sm font-medium">{index.value.toFixed(3)}</span>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600 flex items-center">
+                      {index.label}
+                      <span className="ml-1 cursor-pointer group relative">
+                        <svg width="14" height="14" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#888" strokeWidth="2" fill="#fff"/><text x="12" y="17" textAnchor="middle" fontSize="13" fill="#888">i</text></svg>
+                        <span className="hidden group-hover:block absolute left-1/2 -translate-x-1/2 top-6 z-50 min-w-[180px] bg-white border border-gray-200 shadow-lg rounded-md p-2 text-xs text-gray-700 font-normal">
+                          {index.info}
+                        </span>
+                      </span>
+                    </span>
+                    <span className="text-sm font-medium">{typeof index.value === 'number' && !isNaN(index.value) ? index.value.toFixed(3) : 'N/A'}</span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div
                       className={`${index.color} h-2 rounded-full transition-all duration-500`}
-                      style={{ width: `${Math.max(0, Math.min(100, index.value * 100))}%` }}
+                      style={{ width: `${Math.max(0, Math.min(100, (typeof index.value === 'number' ? index.value : 0) * 100))}%` }}
                     />
                   </div>
                 </div>
@@ -254,9 +279,9 @@ export default function AgriAIMapInsights() {
             </CardHeader>
             <CardContent className="space-y-3">
               {[
-                { label: "Healthy", value: analysisResult.summary.health_zones.healthy, color: "bg-green-500" },
-                { label: "Moderate", value: analysisResult.summary.health_zones.moderate, color: "bg-yellow-500" },
-                { label: "Stressed", value: analysisResult.summary.health_zones.stressed, color: "bg-red-500" },
+                { label: "Healthy", value: analysisResult.summary.health_zones?.healthy ?? 0, color: "bg-green-500" },
+                { label: "Moderate", value: analysisResult.summary.health_zones?.moderate ?? 0, color: "bg-yellow-500" },
+                { label: "Stressed", value: analysisResult.summary.health_zones?.stressed ?? 0, color: "bg-red-500" },
               ].map((zone) => (
                 <div key={zone.label} className="flex justify-between items-center">
                   <div className="flex items-center">
@@ -279,7 +304,7 @@ export default function AgriAIMapInsights() {
             </CardHeader>
             <CardContent>
               <ul className="space-y-2">
-                {analysisResult.summary.recommendations.map((rec, index) => (
+                {(analysisResult.summary.recommendations ?? []).map((rec, index) => (
                   <li key={index} className="text-sm text-gray-700 flex items-start">
                     <span className="w-2 h-2 bg-blue-500 rounded-full mt-2 mr-3 flex-shrink-0" />
                     {rec}
@@ -365,8 +390,8 @@ export default function AgriAIMapInsights() {
               <Satellite className="h-5 w-5 lg:h-6 lg:w-6 text-white" />
             </div>
             <div>
-              <h1 className="text-xl lg:text-2xl font-bold text-gray-900">AgriAI Map Insights</h1>
-              <p className="text-xs lg:text-sm text-gray-600">AI-powered agricultural field analysis</p>
+              <h1 className="text-xl lg:text-2xl font-bold text-gray-900">PixelFarm</h1>
+              <p className="text-xs lg:text-sm text-gray-600">AI-Powered Agricultural Field Analysis</p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
@@ -401,6 +426,7 @@ export default function AgriAIMapInsights() {
             ref={mapRef}
             onFieldSelected={setSelectedField}
             analysisOverlay={analysisResult?.geojson_overlay}
+            ndviOverlayUrl={analysisResult?.overlay_url}
           />
 
           {/* Map Controls */}

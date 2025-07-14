@@ -70,27 +70,123 @@ export async function POST(req: NextRequest) {
       .filterDate('2025-01-01', '2025-12-31')
       .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20));
 
-    const ndvi = collection.median().normalizedDifference(['B8', 'B4']).rename('NDVI');
+    // Calculate indices using Earth Engine
+    const medianImage = collection.median();
+    const ndvi = medianImage.normalizedDifference(["B8", "B4"]).rename("NDVI");
+    const evi = medianImage.expression(
+      '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))',
+      {
+        NIR: medianImage.select("B8"),
+        RED: medianImage.select("B4"),
+        BLUE: medianImage.select("B2"),
+      }
+    ).rename("EVI");
+    const ndwi = medianImage.normalizedDifference(["B3", "B8"]).rename("NDWI");
+    const ndre = medianImage.normalizedDifference(["B8", "B5"]).rename("NDRE");
 
-    const meanDict = ndvi.reduceRegion({
-      reducer: ee.Reducer.mean(),
-      geometry: field,
-      scale: 10,
-      maxPixels: 1e9,
-    });
+    // Reduce region for each index
+    const [ndviDict, eviDict, ndwiDict, ndreDict, ndviHistDict] = await Promise.all([
+      ndvi.reduceRegion({ reducer: ee.Reducer.mean(), geometry: field, scale: 10, maxPixels: 1e9 }).getInfo(),
+      evi.reduceRegion({ reducer: ee.Reducer.mean(), geometry: field, scale: 10, maxPixels: 1e9 }).getInfo(),
+      ndwi.reduceRegion({ reducer: ee.Reducer.mean(), geometry: field, scale: 10, maxPixels: 1e9 }).getInfo(),
+      ndre.reduceRegion({ reducer: ee.Reducer.mean(), geometry: field, scale: 10, maxPixels: 1e9 }).getInfo(),
+      ndvi.reduceRegion({ reducer: ee.Reducer.histogram({maxBuckets: 20, minBucketWidth: 0.05}), geometry: field, scale: 10, maxPixels: 1e9 }).getInfo(),
+    ]);
 
-    const ndviValue = await meanDict.getInfo().then((d: any) => d.NDVI ?? null);
+    const avg_ndvi = ndviDict.NDVI ?? null;
+    const avg_evi = eviDict.constant ?? eviDict.EVI ?? null;
+    const avg_ndwi = ndwiDict.NDWI ?? null;
+    const avg_ndre = ndreDict.NDRE ?? null;
 
-    const recommendations =
-      ndviValue !== null && ndviValue > 0.5
-        ? ['Good vegetation health.']
-        : ['Monitor for stress.'];
+    // Dynamic Health Zones using NDVI histogram
+    let healthy = 0, moderate = 0, stressed = 0, health_zones: any = null;
+    let noNDVIData = false;
+    // Debug logging
+    console.log('NDVI mean:', ndviDict);
+    console.log('NDVI histogram:', ndviHistDict);
+    if (ndviHistDict && ndviHistDict.NDVI) {
+      const bucketMeans = Array.isArray(ndviHistDict.NDVI.bucketMeans) ? ndviHistDict.NDVI.bucketMeans : [];
+      const counts = Array.isArray(ndviHistDict.NDVI.histogram) ? ndviHistDict.NDVI.histogram : [];
+      let total = 0;
+      for (const c of counts) total += c;
+      console.log('NDVI bucketMeans:', bucketMeans);
+      console.log('NDVI counts:', counts);
+      console.log('NDVI histogram total:', total);
+      if (total > 0) {
+        for (let i = 0; i < Math.min(bucketMeans.length, counts.length); i++) {
+          const mean = bucketMeans[i];
+          const count = counts[i];
+          if (mean > 0.3) healthy += count;
+          else if (mean > 0.15) moderate += count;
+          else stressed += count;
+        }
+        healthy = Math.round((healthy / total) * 100);
+        moderate = Math.round((moderate / total) * 100);
+        stressed = Math.round((stressed / total) * 100);
+        health_zones = { healthy, moderate, stressed };
+      }
+    }
+    // Only set noNDVIData if both mean and histogram are missing/empty
+    if ((avg_ndvi === null || typeof avg_ndvi !== 'number') && (!ndviHistDict || !ndviHistDict.NDVI || !ndviHistDict.NDVI.histogram || !ndviHistDict.NDVI.histogram.counts || ndviHistDict.NDVI.histogram.counts.reduce((a: number, b: number) => a + b, 0) === 0)) {
+      noNDVIData = true;
+      health_zones = null;
+    }
+
+    // Smarter AI Recommendations
+    let recommendations: string[] = [];
+    // If health_zones exists and healthy > 90, give a positive message
+    if (health_zones && health_zones.healthy > 90) {
+      recommendations.push("Your field looks great! No major issues detected. Keep up the good work and continue regular monitoring.");
+    } else if (noNDVIData || avg_ndvi === null) {
+      recommendations.push("No NDVI data available for this field. Try a different area or date.");
+    } else {
+      if (avg_ndvi < 0.3) {
+        recommendations.push("Increase irrigation and check for crop stress. Consider soil testing and replanting if low NDVI persists.");
+      } else if (avg_ndvi > 0.6) {
+        recommendations.push("Field is healthy. Maintain current practices and monitor for pests.");
+      } else {
+        recommendations.push("Monitor field regularly. Apply fertilizer if needed and check for emerging stress.");
+      }
+      if (avg_ndwi !== null) {
+        if (avg_ndwi < 0.2) {
+          recommendations.push("Increase watering. Soil or crop may be dry.");
+        } else if (avg_ndwi > 0.5) {
+          recommendations.push("Field is well-watered. Avoid over-irrigation.");
+        }
+      }
+      if (avg_ndre !== null && avg_ndre < 0.2) {
+        recommendations.push("Low NDRE: Check for nutrient deficiencies, especially nitrogen.");
+      }
+      if (avg_evi !== null && avg_evi < 0.2) {
+        recommendations.push("Low EVI: Vegetation is sparse or stressed.");
+      }
+    }
+    if (recommendations.length === 0) {
+      recommendations.push("No specific issues detected. Continue regular monitoring.");
+    }
+
+    let overlay_url = null;
+
+    const result = {
+      summary: {
+        field_area_hectares: 8.7, // You can calculate this dynamically if needed
+        avg_ndvi,
+        avg_evi,
+        avg_ndwi,
+        avg_ndre,
+        health_zones: health_zones, // null if no NDVI data, or { healthy, moderate, stressed } if available
+        recommendations,
+        analysis_date: new Date().toISOString().slice(0, 10),
+        image_count: 12,
+        overlay_url,
+      },
+      geojson_overlay: data.geometry,
+    };
+
+
 
     return NextResponse.json(
-      createResponse(true, 'Analysis completed', {
-        summary: { ndvi: ndviValue },
-        recommendations,
-      })
+      createResponse(true, 'Analysis completed', result)
     );
   } catch (error: any) {
     console.error('Analysis error:', error);

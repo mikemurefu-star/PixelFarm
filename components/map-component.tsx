@@ -8,14 +8,17 @@ import { Navigation, Loader2, AlertTriangle, Trash2, RotateCcw } from "lucide-re
 interface MapComponentProps {
   onFieldSelected: (field: any) => void
   analysisOverlay?: any
+  ndviOverlayUrl?: string
 }
 
-const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, analysisOverlay }, ref) => {
+const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, analysisOverlay, ndviOverlayUrl }, ref) => {
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<L.Map | null>(null)
   const drawnItems = useRef<L.FeatureGroup | null>(null)
   const drawControl = useRef<L.Control.Draw | null>(null)
   const overlayLayer = useRef<L.GeoJSON | null>(null)
+  const ndviImageOverlay = useRef<any>(null)
+  const [showNdviOverlay, setShowNdviOverlay] = useState(true)
   const [isLoading, setIsLoading] = useState(true)
   const [mapError, setMapError] = useState<string | null>(null)
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null)
@@ -214,7 +217,7 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
         center: userLocation,
         zoom: 13,
         zoomControl: false,
-        attributionControl: true,
+        attributionControl: false,
       })
 
       L.control.zoom({ position: "topright" }).addTo(map.current)
@@ -268,21 +271,21 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
         },
         edit: {
           featureGroup: drawnItems.current,
-          remove: true,
-          edit: true,
+          remove: false, // Hide delete button from toolbar
+          edit: false,   // Hide edit button from toolbar
         },
-      })
-      map.current.addControl(drawControl.current)
+      });
+      map.current.addControl(drawControl.current);
 
       map.current.on(L.Draw.Event.CREATED, (e: any) => {
-        const layer = e.layer
-        drawnItems.current?.addLayer(layer)
-        setHasDrawnItems(true)
-        const geoJson = layer.toGeoJSON()
-        const area = calculatePolygonArea(geoJson.geometry.coordinates[0])
-        geoJson.properties = { ...geoJson.properties, area }
-        onFieldSelected(geoJson)
-      })
+        const layer = e.layer;
+        drawnItems.current?.addLayer(layer);
+        setHasDrawnItems(true);
+        const geoJson = layer.toGeoJSON();
+        const area = calculatePolygonArea(geoJson.geometry.coordinates[0]);
+        geoJson.properties = { ...geoJson.properties, area };
+        onFieldSelected(geoJson);
+      });
 
       map.current.on(L.Draw.Event.EDITED, (e: any) => {
         e.layers.eachLayer((layer: any) => {
@@ -360,6 +363,44 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
     }).addTo(map.current)
   }, [analysisOverlay])
 
+  // Handle NDVI PNG overlay image
+  useEffect(() => {
+    if (!map.current || !ndviOverlayUrl || !showNdviOverlay || !window.L) {
+      if (ndviImageOverlay.current && map.current) {
+        map.current.removeLayer(ndviImageOverlay.current)
+        ndviImageOverlay.current = null
+      }
+      return
+    }
+    // Remove previous overlay if exists
+    if (ndviImageOverlay.current) {
+      map.current.removeLayer(ndviImageOverlay.current)
+      ndviImageOverlay.current = null
+    }
+    // Get bounds from the drawn polygon (if available)
+    let bounds = null
+    if (drawnItems.current && drawnItems.current.getLayers().length > 0) {
+      const layer = drawnItems.current.getLayers()[0]
+      bounds = layer.getBounds()
+    }
+    // Fallback: use whole map bounds
+    if (!bounds) {
+      bounds = map.current.getBounds()
+    }
+    ndviImageOverlay.current = window.L.imageOverlay(ndviOverlayUrl, bounds, {
+      opacity: 0.6,
+      interactive: false,
+      zIndex: 500
+    })
+    ndviImageOverlay.current.addTo(map.current)
+    return () => {
+      if (ndviImageOverlay.current && map.current) {
+        map.current.removeLayer(ndviImageOverlay.current)
+        ndviImageOverlay.current = null
+      }
+    }
+  }, [ndviOverlayUrl, showNdviOverlay, drawnItems.current])
+
   // Calculate polygon area in hectares accurately
   const calculatePolygonArea = (coordinates: number[][]) => {
     if (!coordinates || coordinates.length < 4) {
@@ -426,6 +467,16 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
       )}
 
       <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-[1000]">
+        {ndviOverlayUrl && (
+          <Button
+            onClick={() => setShowNdviOverlay((v) => !v)}
+            size="sm"
+            variant={showNdviOverlay ? "secondary" : "outline"}
+            className="bg-white hover:bg-gray-50 shadow-lg"
+          >
+            {showNdviOverlay ? "Hide NDVI Overlay" : "Show NDVI Overlay"}
+          </Button>
+        )}
         {hasDrawnItems && (
           <Button onClick={clearSelection} size="sm" variant="destructive" className="bg-red-600 hover:bg-red-700 shadow-lg">
             <Trash2 className="h-4 w-4 mr-1" />
@@ -443,6 +494,17 @@ const MapComponent = forwardRef<any, MapComponentProps>(({ onFieldSelected, anal
           <span className="hidden sm:inline">Refresh</span>
         </Button>
       </div>
+      {/* NDVI Legend */}
+      {ndviOverlayUrl && showNdviOverlay && (
+        <div className="absolute bottom-4 left-4 z-[1000] bg-white bg-opacity-90 rounded shadow-lg p-3 flex flex-col gap-2 border border-gray-200">
+          <div className="font-semibold text-xs text-gray-700 mb-1">NDVI Health Zones</div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1"><span className="inline-block w-4 h-4 rounded bg-[#FF0000] border border-gray-300" /> <span className="text-xs text-gray-700">Stressed</span></div>
+            <div className="flex items-center gap-1"><span className="inline-block w-4 h-4 rounded bg-[#FFFF00] border border-gray-300" /> <span className="text-xs text-gray-700">Moderate</span></div>
+            <div className="flex items-center gap-1"><span className="inline-block w-4 h-4 rounded bg-[#00FF00] border border-gray-300" /> <span className="text-xs text-gray-700">Healthy</span></div>
+          </div>
+        </div>
+      )}
     </div>
   )
 })

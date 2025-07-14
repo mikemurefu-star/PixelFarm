@@ -4,11 +4,11 @@ import "./globals.css"
 import { Toaster } from "@/components/ui/toaster"
 
 export const metadata: Metadata = {
-  title: "AgriAI Map Insights - AI-Powered Agricultural Field Analysis",
+  title: "PixelFarm - AI-Powered Agricultural Field Analysis",
   description:
     "Analyze agricultural fields using satellite imagery and AI. Get vegetation health indices, water stress detection, and personalized farming recommendations.",
   keywords: "agriculture, AI, satellite imagery, NDVI, crop health, precision farming, field analysis",
-  authors: [{ name: "AgriAI Team" }],
+  authors: [{ name: "PixelFarm Team" }],
   creator: "AgriAI Map Insights",
   publisher: "AgriAI",
   robots: "index, follow",
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "AgriAI Map Insights",
-    description: "AI-powered agricultural field analysis using satellite imagery",
+    description: "AI-Powered Agricultural Field Analysis",
   },
   viewport: "width=device-width, initial-scale=1, maximum-scale=1",
   themeColor: "#16a34a",
