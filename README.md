@@ -1,284 +1,153 @@
-# AgriAI Map Insights
+# PixelFarm: AI-Powered Agricultural Field Analysis
 
 **Production-ready, fully open-source agricultural field analysis tool**
 
-A bulletproof satellite-based field analysis application with zero paid dependencies. Built with Leaflet + Esri satellite imagery for global coverage and Google Earth Engine for AI-powered crop analysis.
+A bulletproof satellite-based field analysis application with zero paid dependencies. Built with Next.js, Leaflet, and Google Earth Engine for AI-powered crop analysis.
 
 ## 🎯 **Key Features**
 
 ### **🗺️ Satellite Mapping (100% Free)**
-- **Esri World Imagery**: High-resolution global satellite coverage
-- **Leaflet.js**: Lightweight, reliable mapping library via CDN
-- **Drawing Tools**: Polygon & rectangle field selection with area calculation
-- **Responsive Design**: Works seamlessly on desktop and mobile
+- **Esri World Imagery**: High-resolution global satellite coverage.
+- **Leaflet.js**: Lightweight, reliable mapping library.
+- **Drawing Tools**: Polygon field selection with area calculation.
+- **Responsive Design**: Works seamlessly on desktop and mobile.
 
-### **🤖 AI-Powered Analysis**
-- **Vegetation Indices**: NDVI, EVI, NDWI, NDRE computation
-- **Health Zones**: ML-based field classification (healthy/moderate/stressed)
-- **Smart Recommendations**: Context-aware agricultural insights
-- **Satellite Data**: Sentinel-2 imagery via Google Earth Engine
+### **🤖 AI-Powered Analysis (via Google Earth Engine)**
+- **Vegetation Indices**: NDVI, EVI, NDWI, and NDRE computation.
+- **Health Zones**: Dynamic classification of field health (healthy, moderate, stressed).
+- **Smart Recommendations**: Context-aware agricultural insights based on index values.
+- **Satellite Data**: Near real-time Sentinel-2 imagery.
 
-### **🛡️ Production-Ready**
-- **Robust Error Handling**: Graceful fallbacks and user-friendly messages
-- **Input Validation**: Comprehensive geometry and data validation
-- **Toast Notifications**: Real-time feedback for all operations
-- **Refresh Functionality**: Easy recovery from network issues
-- **Clean UI**: Minimal, uncluttered interface focused on analysis
+### **🛡️ Production-Ready & Modern Stack**
+- **Next.js 14+**: Full-stack React application with App Router.
+- **TypeScript**: Type-safe code from frontend to backend.
+- **Robust Error Handling**: Graceful fallbacks and user-friendly toast notifications.
+- **Input Validation**: Comprehensive geometry and data validation on the backend.
+- **Clean UI**: Minimal, uncluttered interface built with **Tailwind CSS** and **Radix UI**.
 
 ## 🚀 **Quick Start**
 
-### **Frontend (Zero Configuration)**
-\`\`\`bash
-# Install dependencies
+This is a full-stack Next.js application. The frontend and backend API are in the same project.
+
+### **1. Install Dependencies**
+```bash
 npm install
+```
 
-# Run development server
+### **2. Set Up Environment Variables**
+
+Create a file named `.env.local` in the root of the project and add your Google Earth Engine (GEE) service account credentials. You can get these from the Google Cloud Console.
+
+```bash
+# .env.local
+
+# Google Earth Engine Credentials
+GEE_PROJECT_ID="your-gcp-project-id"
+GEE_CLIENT_EMAIL="your-service-account-email@your-project.iam.gserviceaccount.com"
+GEE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...your-private-key...\n-----END PRIVATE KEY-----\n"
+```
+
+**Important**: When pasting your private key, you must replace all newline characters with `\n` for it to be parsed correctly from the environment variable.
+
+### **3. Run the Development Server**
+```bash
 npm run dev
+```
 
-# Build for production
-npm run build
-\`\`\`
-
-**That's it!** No API keys, tokens, or paid services required for the frontend.
-
-### **Backend Setup**
-\`\`\`bash
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Authenticate with Google Earth Engine
-earthengine authenticate
-
-# Run Flask server
-python scripts/flask_backend.py
-\`\`\`
-
-### **Environment Variables**
-\`\`\`bash
-# Frontend (.env.local) - Optional
-NEXT_PUBLIC_BACKEND_URL=http://localhost:5000
-
-# Backend - For production only
-GOOGLE_APPLICATION_CREDENTIALS=path/to/service-account-key.json
-PORT=5000
-\`\`\`
+Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
 
 ## 📦 **Deployment**
 
-### **Frontend → Vercel (Recommended)**
-\`\`\`bash
-# Deploy instantly
-vercel --prod
+This Next.js application can be deployed to any hosting provider that supports Node.js (e.g., a VPS, Heroku, Render, Railway, etc.).
 
-# Or connect GitHub repository for auto-deployment
-\`\`\`
+### **1. Build the Application**
 
-**Environment Variables in Vercel:**
-- `NEXT_PUBLIC_BACKEND_URL`: Your backend URL
+First, build the production-optimized application:
+```bash
+npm run build
+```
+This will create an optimized build in the `.next` directory.
 
-### **Backend → Render/Railway/Fly.io**
-\`\`\`bash
-# Example for Render
-# 1. Connect GitHub repository
-# 2. Build command: pip install -r requirements.txt
-# 3. Start command: python scripts/flask_backend.py
-# 4. Add Google Earth Engine service account credentials
-\`\`\`
+### **2. Run the Production Server**
 
-### **Vercel Configuration**
-\`\`\`json
-{
-  "builds": [
-    {
-      "src": "package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": ".next"
-      }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/$1"
-    }
-  ]
-}
-\`\`\`
+After the build is complete, start the production server:
+```bash
+npm start
+```
+The application will run on the port specified in your environment (defaulting to 3000).
+
+### **3. Configure Environment Variables**
+
+On your hosting provider, you must set the following environment variables for the application to run correctly:
+- `GEE_PROJECT_ID`
+- `GEE_CLIENT_EMAIL`
+- `GEE_PRIVATE_KEY`
+- `NODE_ENV=production`
+
+Make sure to configure your server environment (e.g., using `systemd` or a process manager like `pm2`) to keep the `npm start` process running.
 
 ## 🏗️ **Architecture**
 
-### **Frontend Stack**
-- **Next.js 15**: React framework with App Router
-- **TypeScript**: Type-safe development
-- **Tailwind CSS**: Utility-first styling
-- **Leaflet.js**: Mapping library (CDN)
-- **Esri Tiles**: Satellite imagery (free tier)
-- **Radix UI**: Accessible components
-
-### **Backend Stack**
-- **Flask**: Lightweight Python web framework
-- **Google Earth Engine**: Satellite data processing
-- **Scikit-learn**: Machine learning for health classification
-- **NumPy/Pandas**: Data processing
-- **CORS**: Cross-origin resource sharing
+### **Unified Stack (Next.js)**
+- **Framework**: **Next.js 14+** (App Router)
+- **Language**: **TypeScript**
+- **Frontend**: React, Tailwind CSS, Radix UI
+- **Backend**: **Next.js API Routes** (running on Node.js)
+- **Mapping**: Leaflet.js with Esri World Imagery tiles.
+- **AI/Data Processing**: **Google Earth Engine Node.js SDK**
 
 ### **Key Design Decisions**
-- ✅ **CDN-only mapping**: No npm dependencies for mapping
-- ✅ **Single satellite layer**: Simplified, focused interface
-- ✅ **Standardized API**: Consistent JSON responses
-- ✅ **Comprehensive validation**: Input sanitization and error handling
-- ✅ **Toast notifications**: Better UX than inline alerts
-- ✅ **Refresh functionality**: Easy error recovery
+- ✅ **Unified Full-Stack**: Simplified development and deployment with Next.js.
+- ✅ **Server-Side GEE**: All Google Earth Engine processing is done securely on the backend.
+- ✅ **Standardized API**: The frontend communicates with the backend via a clear `/api/analyze_field` endpoint.
+- ✅ **Type Safety**: End-to-end type safety with TypeScript.
+- ✅ **Minimal Dependencies**: Avoids unnecessary npm packages for core mapping functionality.
 
 ## 🔧 **API Reference**
 
-### **POST /analyze_field**
-Analyze agricultural field using satellite imagery.
+### `POST /api/analyze_field`
 
-**Request:**
-\`\`\`json
+Analyzes a given agricultural field geometry.
+
+**Request Body:**
+```json
 {
   "geometry": {
     "type": "Polygon",
     "coordinates": [[[lng, lat], [lng, lat], ...]]
-  },
-  "properties": {
-    "area": 12.5
   }
 }
-\`\`\`
+```
 
-**Response:**
-\`\`\`json
+**Successful Response (200):**
+```json
 {
-  "success": true,
-  "message": "Field analysis completed successfully",
-  "timestamp": "2024-01-15T10:30:00Z",
-  "data": {
     "summary": {
-      "field_area_hectares": 12.5,
-      "avg_ndvi": 0.72,
-      "avg_evi": 0.68,
-      "avg_ndwi": 0.15,
-      "avg_ndre": 0.45,
-      "health_zones": {
-        "healthy": 65,
-        "moderate": 25,
-        "stressed": 10
-      },
-      "recommendations": ["..."],
-      "analysis_date": "2024-01-15",
-      "image_count": 5
+        "field_area_hectares": 15.7,
+        "avg_ndvi": 0.65,
+        "avg_evi": 0.58,
+        "avg_ndwi": 0.21,
+        "avg_ndre": 0.41,
+        "health_zones": {
+            "healthy": 70,
+            "moderate": 20,
+            "stressed": 10
+        },
+        "recommendations": [
+            "Field shows predominantly healthy vegetation..."
+        ]
     },
-    "geojson_overlay": {
-      "type": "FeatureCollection",
-      "features": []
-    }
-  }
+    "overlay_url": null
 }
-\`\`\`
-
-### **GET /health**
-Service health check.
-
-**Response:**
-\`\`\`json
-{
-  "success": true,
-  "message": "Service is healthy",
-  "timestamp": "2024-01-15T10:30:00Z",
-  "data": {
-    "gee_initialized": true,
-    "version": "1.0.0"
-  }
-}
-\`\`\`
-
-## 🛡️ **Error Handling**
-
-### **Frontend**
-- **Network errors**: Toast notifications with retry options
-- **Validation errors**: Inline feedback with clear messages
-- **Map loading**: Graceful fallbacks with refresh button
-- **Offline detection**: Status indicators and user guidance
-
-### **Backend**
-- **Input validation**: Comprehensive geometry and data checks
-- **Earth Engine errors**: Graceful handling of API failures
-- **Standardized responses**: Consistent error format across endpoints
-- **Logging**: Detailed error tracking for debugging
-
-## 🔒 **Security & Best Practices**
-
-- ✅ **Input validation**: All user inputs sanitized and validated
-- ✅ **CORS configuration**: Proper cross-origin handling
-- ✅ **Error sanitization**: No sensitive data in error messages
-- ✅ **Rate limiting**: Implement in production deployment
-- ✅ **HTTPS only**: Enforce secure connections in production
-
-## 📊 **Performance**
-
-- **Frontend**: Static generation with Next.js for fast loading
-- **CDN assets**: Leaflet and tiles served from global CDNs
-- **Caching**: Aggressive caching of static assets
-- **Lazy loading**: Map component loaded only when needed
-- **Optimized builds**: Tree-shaking and code splitting
-
-## 🤝 **Contributing**
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Commit changes: `git commit -m 'Add amazing feature'`
-4. Push to branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
-
-## 📝 **Development Guidelines**
-
-- **Code Style**: Follow TypeScript/Python best practices
-- **Testing**: Add tests for new features
-- **Documentation**: Update README for significant changes
-- **Error Handling**: Maintain robust error handling patterns
+```
+*Note: `overlay_url` is reserved for future NDVI map overlay functionality and is currently `null`.*
 
 ## 🐛 **Troubleshooting**
 
-### **Common Issues**
-
-**Map not loading:**
-- Check internet connection
-- Click the "Refresh" button
-- Verify CDN accessibility
-
-**Analysis failing:**
-- Ensure field is between 0.1-10,000 hectares
-- Check backend URL configuration
-- Verify Google Earth Engine authentication
-
-**Build errors:**
-- Run `npm install` to update dependencies
-- Check Node.js version (18+ required)
-- Clear `.next` cache: `rm -rf .next`
-
-### **Debug Mode**
-\`\`\`bash
-# Frontend debug
-npm run dev
-
-# Backend debug
-FLASK_ENV=development python scripts/flask_backend.py
-\`\`\`
+- **GEE Authentication Errors**: Ensure your `.env.local` file is correctly formatted, especially the `GEE_PRIVATE_KEY` with `\n` for newlines. Also, ensure your service account has the "Earth Engine Resource User" role in your Google Cloud project.
+- **Analysis Failing**: Make sure the drawn polygon is a reasonable size (e.g., > 0.1 hectares).
+- **Build Errors**: Run `npm install` again and ensure you are using Node.js version 18 or higher.
 
 ## 📄 **License**
 
-MIT License - see [LICENSE](LICENSE) file for details.
-
-## 🙏 **Acknowledgments**
-
-- **Esri**: Free satellite imagery tiles
-- **Leaflet**: Open-source mapping library
-- **Google Earth Engine**: Satellite data processing
-- **OpenStreetMap**: Community-driven mapping data
-
----
-
-**Ready to deploy?** This application is production-ready with zero paid dependencies. Deploy the frontend to Vercel and backend to any cloud provider for a complete agricultural analysis solution.
+MIT License. See the [LICENSE](LICENSE) file for details.
