@@ -1,4 +1,3 @@
-process.env.HOME = "/tmp";
 import { NextRequest, NextResponse } from 'next/server';
 import ee from '@google/earthengine';
 
@@ -55,29 +54,11 @@ export async function POST(req: NextRequest) {
 
     // Authenticate EE SDK with service account
     await new Promise<void>((resolve, reject) => {
-      await new Promise<void>((resolve, reject) => {
-  try {
-    const credentials = {
-      client_email: clientEmail,
-      private_key: privateKey,
-    };
-
-    ee.data.authenticateViaPrivateKey(credentials, () => {
-      ee.initialize(null, null, () => {
-        console.log("✅ Earth Engine initialized in memory");
-        resolve();
-      }, (err) => {
-        console.error("🚫 EE init error:", err);
-        reject(err);
-      });
-    }, (err) => {
-      console.error("🚫 EE auth error:", err);
-      reject(err);
-    });
-  } catch (error) {
-    reject(error);
-  }
-});
+      ee.data.authenticateViaPrivateKey(
+        { private_key: privateKey, client_email: clientEmail },
+        () => ee.initialize(null, null, resolve, reject),
+        reject
+      );
     });
 
     // Create EE geometry
