@@ -1,3 +1,4 @@
+process.env.HOME = "/tmp";
 import { NextRequest, NextResponse } from 'next/server';
 import ee from '@google/earthengine';
 
